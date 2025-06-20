@@ -1,0 +1,39 @@
+{
+  "name": "buddy",
+  "version": "1.0.0",
+  "description": "DAUM 플랫폼의 감정 회복 AI 말벗 서비스",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "bash -c 'source .env && wrangler dev --local --var OPENAI_API_KEY:$OPENAI_API_KEY --var CLAUDE_API_KEY:$CLAUDE_API_KEY'",
+    "dev:simple": "wrangler dev --local --var OPENAI_API_KEY:MOCK_KEY_FOR_TESTING --var CLAUDE_API_KEY:MOCK_KEY_FOR_TESTING",
+    "deploy": "wrangler deploy",
+    "lint": "eslint src/**/*.js",
+    "lint:fix": "eslint src/**/*.js --fix"
+  },
+  "dependencies": {
+    "@cloudflare/workers-types": "^4.20231218.0",
+    "dotenv": "^16.5.0",
+    "uuid": "^11.1.0",
+    "wrangler": "^3.78.7"
+  },
+  "devDependencies": {
+    "eslint": "^8.56.0",
+    "eslint-plugin-node": "^11.1.0"
+  },
+  "keywords": [
+    "cloudflare-workers",
+    "ai",
+    "openai",
+    "claude",
+    "emotion-recovery",
+    "korean-ai",
+    "daum-platform"
+  ],
+  "author": "Yetimates",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/amansman77/buddy.git"
+  }
+}
