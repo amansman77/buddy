@@ -5,6 +5,11 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따릅니다,
 그리고 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [1.1.0] - 2025-06-28
+
+### Changed
+- 서비스별로 프롬프트 커스터마이징
+
 ## [1.0.0] - 2025-06-21
 
 ### Added

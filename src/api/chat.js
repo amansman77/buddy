@@ -29,7 +29,9 @@ export const handleChatRequest = async (request, env) => {
       messageLength: body.message?.length, 
       sessionId: body.sessionId,
       service: body.service,
-      emotion: body.emotion
+      emotion: body.emotion,
+      hasPractice: !!body.practice,
+      practiceTitle: body.practice?.title
     });
 
     // 요청 유효성 검사
@@ -109,6 +111,16 @@ export const handleChatRequest = async (request, env) => {
       userProfile: null, // 향후 사용자 프로필 연동
     };
 
+    console.log('Context for system prompt:', { 
+      service, 
+      emotion: analyzedEmotion, 
+      hasPractice: !!practice,
+      practiceTitle: practice?.title,
+      practiceDay: practice?.day,
+      practiceCategory: practice?.category,
+      practiceDescription: practice?.description?.substring(0, 100) + '...'
+    });
+
     // 시스템 프롬프트 생성
     const systemPrompt = createSystemPrompt(context);
 
@@ -126,6 +138,42 @@ export const handleChatRequest = async (request, env) => {
     );
 
     console.log('LLM API response received', { responseLength: aiResponse.length });
+
+    // LLM 요청-응답 이력 저장 (운영/분석용)
+    if (env.DB) {
+      try {
+        const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+        const timestamp = new Date().toISOString();
+        const historyData = {
+          id: requestId,
+          request_id: requestId,
+          timestamp,
+          system_prompt: systemPrompt,
+          user_message: message,
+          response_content: aiResponse,
+          response_length: aiResponse.length,
+          conversation_length: conversationHistory.length,
+          practice_info: practice ? JSON.stringify(practice) : null,
+          error_message: null,
+        };
+        await env.DB.prepare(`INSERT INTO llm_history (id, request_id, timestamp, system_prompt, user_message, response_content, response_length, conversation_length, practice_info, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(
+            historyData.id,
+            historyData.request_id,
+            historyData.timestamp,
+            historyData.system_prompt,
+            historyData.user_message,
+            historyData.response_content,
+            historyData.response_length,
+            historyData.conversation_length,
+            historyData.practice_info,
+            historyData.error_message
+          ).run();
+        console.log('Saved LLM history to D1:', { requestId, service });
+      } catch (historyError) {
+        console.warn('Failed to save LLM history to D1:', historyError);
+      }
+    }
 
     // 대화 기록 업데이트
     const updatedHistory = [
@@ -162,6 +210,42 @@ export const handleChatRequest = async (request, env) => {
       stack: error.stack,
       name: error.name,
     });
+
+    // 에러 발생 시에도 LLM 이력 저장
+    if (env.DB && body) {
+      try {
+        const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+        const timestamp = new Date().toISOString();
+        const historyData = {
+          id: requestId,
+          request_id: requestId,
+          timestamp,
+          system_prompt: null,
+          user_message: body.message,
+          response_content: null,
+          response_length: 0,
+          conversation_length: 0,
+          practice_info: body.practice ? JSON.stringify(body.practice) : null,
+          error_message: error.message,
+        };
+        await env.DB.prepare(`INSERT INTO llm_history (id, request_id, timestamp, system_prompt, user_message, response_content, response_length, conversation_length, practice_info, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(
+            historyData.id,
+            historyData.request_id,
+            historyData.timestamp,
+            historyData.system_prompt,
+            historyData.user_message,
+            historyData.response_content,
+            historyData.response_length,
+            historyData.conversation_length,
+            historyData.practice_info,
+            historyData.error_message
+          ).run();
+        console.log('Saved error LLM history to D1:', { requestId });
+      } catch (historyError) {
+        console.warn('Failed to save error LLM history to D1:', historyError);
+      }
+    }
 
     if (error.message.includes('API')) {
       return createErrorResponse('AI 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.', 503);

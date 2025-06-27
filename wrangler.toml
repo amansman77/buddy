@@ -14,4 +14,10 @@ name = "buddy"
 # Environment variables (set via wrangler secret put)
 # OPENAI_API_KEY - OpenAI API key for LLM integration
 # CLAUDE_API_KEY - Anthropic Claude API key for LLM integration
-# CHAT_HISTORY - Cloudflare KV namespace for chat history 
+# CHAT_HISTORY - Cloudflare KV namespace for chat history
+# LLM_HISTORY - Cloudflare KV namespace for LLM request/response history
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "buddy-db"
+database_id = "28a02194-a330-4bfb-b863-d15315f59a6c" 
