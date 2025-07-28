@@ -43,18 +43,20 @@ export class LLMService {
   }
 
   /**
-   * OpenAI API 응답 생성
+   * OpenAI API 응답 생성 (Vercel Proxy를 통해)
    */
   async generateOpenAIResponse(userMessage, conversationHistory, systemPrompt, options) {
     const messages = this.buildMessages(userMessage, conversationHistory, systemPrompt);
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Vercel Proxy를 통해 OpenAI API 호출
+    const response = await fetch('https://buddy-vercel-proxy.vercel.app/api', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.openaiApiKey}`,
       },
       body: JSON.stringify({
+        apiUrl: 'https://api.openai.com/v1/chat/completions',
+        apiKey: this.config.openaiApiKey,
         model: options.model || 'gpt-4o-mini',
         messages,
         max_tokens: options.maxTokens || 1000,
@@ -161,12 +163,20 @@ export class LLMService {
    * OpenAI API 응답에서 콘텐츠 추출
    */
   extractResponseContent(response) {
+    // 오류 응답 처리
+    if (response.error) {
+      throw new Error(`OpenAI API Error: ${response.error.message || response.error.type || 'Unknown error'}`);
+    }
+
+    // 정상 응답 확인
     if (!response.choices || response.choices.length === 0) {
+      console.error('Invalid OpenAI response:', response);
       throw new Error('No response choices available');
     }
 
     const choice = response.choices[0];
     if (!choice.message || !choice.message.content) {
+      console.error('Invalid choice format:', choice);
       throw new Error('Invalid response format');
     }
 
