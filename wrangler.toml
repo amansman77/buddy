@@ -14,8 +14,16 @@ name = "buddy"
 # Environment variables (set via wrangler secret put)
 # OPENAI_API_KEY - OpenAI API key for LLM integration
 # CLAUDE_API_KEY - Anthropic Claude API key for LLM integration
-# CHAT_HISTORY - Cloudflare KV namespace for chat history
-# LLM_HISTORY - Cloudflare KV namespace for LLM request/response history
+
+# KV Namespaces
+[[kv_namespaces]]
+binding = "CHAT_HISTORY"
+id = "65fd50e7ae6b467b8b3a86fbb51e8df0"
+preview_id = "70c9d54c5cef48baa210ebcaebed75b1"
+
+[[env.production.kv_namespaces]]
+binding = "CHAT_HISTORY"
+id = "65fd50e7ae6b467b8b3a86fbb51e8df0"
 
 [[env.production.d1_databases]]
 binding = "DB"
