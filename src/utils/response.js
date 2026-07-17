@@ -4,9 +4,10 @@ import { getCorsHeaders } from './cors.js';
  * 성공 응답 생성
  * @param {Object} data - 응답 데이터
  * @param {number} status - HTTP 상태 코드 (기본값: 200)
+ * @param {string|null} origin - 요청의 Origin 헤더 값 (CORS용)
  * @returns {Response} HTTP 응답
  */
-export const createSuccessResponse = (data, status = 200) => {
+export const createSuccessResponse = (data, status = 200, origin = null) => {
   return new Response(JSON.stringify({
     success: true,
     data,
@@ -14,7 +15,7 @@ export const createSuccessResponse = (data, status = 200) => {
     status,
     headers: {
       'Content-Type': 'application/json',
-      ...getCorsHeaders(),
+      ...getCorsHeaders(origin),
     },
   });
 };
@@ -23,9 +24,10 @@ export const createSuccessResponse = (data, status = 200) => {
  * 오류 응답 생성
  * @param {string} message - 오류 메시지
  * @param {number} status - HTTP 상태 코드 (기본값: 400)
+ * @param {string|null} origin - 요청의 Origin 헤더 값 (CORS용)
  * @returns {Response} HTTP 응답
  */
-export const createErrorResponse = (message, status = 400) => {
+export const createErrorResponse = (message, status = 400, origin = null) => {
   return new Response(JSON.stringify({
     success: false,
     error: {
@@ -36,7 +38,7 @@ export const createErrorResponse = (message, status = 400) => {
     status,
     headers: {
       'Content-Type': 'application/json',
-      ...getCorsHeaders(),
+      ...getCorsHeaders(origin),
     },
   });
-}; 
+};

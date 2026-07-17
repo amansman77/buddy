@@ -1,9 +1,10 @@
 import { LLMService } from '../services/llm.js';
 import { createErrorResponse, createSuccessResponse } from '../utils/response.js';
 import { validateChatRequest } from '../utils/validation.js';
-import { createSystemPrompt, createEmotionAnalysisPrompt } from '../prompts/buddy.js';
+import { createSystemPrompt } from '../prompts/buddy.js';
 
 const SUPPORTED_PROVIDERS = ['openai', 'nvidia', 'claude'];
+const RATE_LIMIT_PER_MINUTE = 20;
 
 /**
  * env.LLM_PROVIDER로 명시적으로 지정된 provider를 사용한다. 자동 폴백은 하지 않는다 —
@@ -29,20 +30,53 @@ function resolveProvider(env) {
 }
 
 /**
+ * IP 기준 분당 요청 수를 제한한다 (CORS는 브라우저만 막을 뿐 curl 같은 직접 호출은
+ * 못 막기 때문에, 실제 남용 방지는 이 rate limit이 담당한다).
+ * KV에는 원자적 증가가 없어 동시 요청 시 약간의 오차는 있을 수 있지만,
+ * 이 서비스 규모에서는 대략적인 제한으로 충분하다.
+ * @returns {Promise<boolean>} true면 허용, false면 한도 초과
+ */
+async function checkRateLimit(env, ip) {
+  if (!env.CHAT_HISTORY || !ip || ip === 'unknown') {
+    return true; // KV나 IP 정보가 없으면 열어둔다 (fail-open)
+  }
+
+  const minuteBucket = Math.floor(Date.now() / 60000);
+  const key = `ratelimit:${ip}:${minuteBucket}`;
+  const current = parseInt((await env.CHAT_HISTORY.get(key)) || '0', 10);
+
+  if (current >= RATE_LIMIT_PER_MINUTE) {
+    return false;
+  }
+
+  await env.CHAT_HISTORY.put(key, String(current + 1), { expirationTtl: 120 });
+  return true;
+}
+
+/**
  * 채팅 API 요청 처리
  * @param {Request} request - HTTP 요청
  * @param {Object} env - 환경 변수
  * @returns {Promise<Response>} HTTP 응답
  */
 export const handleChatRequest = async (request, env) => {
+  const origin = request.headers.get('Origin');
+
   // POST 메서드만 허용
   if (request.method !== 'POST') {
-    return createErrorResponse('Method Not Allowed', 405);
+    return createErrorResponse('Method Not Allowed', 405, origin);
   }
 
   let body;
 
   try {
+    const clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
+    const withinLimit = await checkRateLimit(env, clientIp);
+    if (!withinLimit) {
+      console.warn('Rate limit exceeded', { ip: clientIp });
+      return createErrorResponse('요청이 너무 많습니다. 잠시 후 다시 시도해주세요.', 429, origin);
+    }
+
     console.log('Chat request received', {
       method: request.method,
       url: request.url,
@@ -53,8 +87,8 @@ export const handleChatRequest = async (request, env) => {
 
     // 요청 본문 파싱
     body = await request.json();
-    console.log('Request body parsed', { 
-      messageLength: body.message?.length, 
+    console.log('Request body parsed', {
+      messageLength: body.message?.length,
       sessionId: body.sessionId,
       service: body.service,
       emotion: body.emotion,
@@ -66,7 +100,7 @@ export const handleChatRequest = async (request, env) => {
     const validationError = validateChatRequest(body);
     if (validationError) {
       console.log('Validation error:', validationError);
-      return createErrorResponse(validationError, 400);
+      return createErrorResponse(validationError, 400, origin);
     }
 
     const { message, sessionId, service = 'general', emotion, practice } = body;
@@ -103,29 +137,10 @@ export const handleChatRequest = async (request, env) => {
       }
     }
 
-    // 감정 분석 (선택사항, Mock 모드가 아닌 경우)
-    let analyzedEmotion = emotion;
-    if (!emotion && !isMockMode) {
-      try {
-        const emotionPrompt = createEmotionAnalysisPrompt(message);
-        const emotionResponse = await llmService.generateResponse(
-          message,
-          [],
-          emotionPrompt,
-          { maxTokens: 200, temperature: 0.3 }
-        );
-        
-        try {
-          const emotionData = JSON.parse(emotionResponse);
-          analyzedEmotion = emotionData.primaryEmotion;
-          console.log('Emotion analysis result:', emotionData);
-        } catch (parseError) {
-          console.warn('Failed to parse emotion analysis:', parseError);
-        }
-      } catch (emotionError) {
-        console.warn('Emotion analysis failed:', emotionError);
-      }
-    }
+    // 감정은 프론트엔드가 명시적으로 보낸 값만 사용한다 (예: 감정 칩 클릭).
+    // 별도로 안 보내면 굳이 감정 분석용 LLM 호출을 추가로 하지 않고, system prompt에서
+    // 모델이 메시지로부터 스스로 감정을 파악해 톤을 맞추도록 한다 (createSystemPrompt 참고).
+    const analyzedEmotion = emotion || null;
 
     // 컨텍스트 구성
     const context = {
@@ -135,9 +150,9 @@ export const handleChatRequest = async (request, env) => {
       userProfile: null, // 향후 사용자 프로필 연동
     };
 
-    console.log('Context for system prompt:', { 
-      service, 
-      emotion: analyzedEmotion, 
+    console.log('Context for system prompt:', {
+      service,
+      emotion: analyzedEmotion,
       hasPractice: !!practice,
       practiceTitle: practice?.title,
       practiceDay: practice?.day,
@@ -226,7 +241,7 @@ export const handleChatRequest = async (request, env) => {
       sessionId,
       timestamp: new Date().toISOString(),
       isMockMode,
-    });
+    }, 200, origin);
 
   } catch (error) {
     console.error('Chat API error:', {
@@ -272,14 +287,14 @@ export const handleChatRequest = async (request, env) => {
     }
 
     if (error.message.includes('API')) {
-      return createErrorResponse('AI 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.', 503);
+      return createErrorResponse('AI 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.', 503, origin);
     }
 
     if (error.name === 'SyntaxError' && error.message.includes('JSON')) {
-      return createErrorResponse('잘못된 요청 형식입니다.', 400);
+      return createErrorResponse('잘못된 요청 형식입니다.', 400, origin);
     }
 
-    return createErrorResponse('메시지 처리 중 오류가 발생했습니다.', 500);
+    return createErrorResponse('메시지 처리 중 오류가 발생했습니다.', 500, origin);
   }
 };
 
@@ -317,4 +332,4 @@ export const handleTteutChat = async (request, env) => {
     headers: request.headers,
     body: JSON.stringify(body),
   }), env);
-}; 
+};

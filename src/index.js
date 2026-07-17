@@ -10,11 +10,13 @@ import { createErrorResponse } from './utils/response.js';
  * @returns {Promise<Response>} HTTP 응답
  */
 const handleRequest = async (request, env, ctx) => {
+  const origin = request.headers.get('Origin');
+
   // CORS 프리플라이트 요청 처리
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 200,
-      headers: getCorsHeaders(),
+      headers: getCorsHeaders(origin),
     });
   }
 
@@ -45,25 +47,25 @@ const handleRequest = async (request, env, ctx) => {
         }), {
           headers: {
             'Content-Type': 'application/json',
-            ...getCorsHeaders(),
+            ...getCorsHeaders(origin),
           },
         });
-      
+
       case '/':
       case '/index.html':
         return new Response(getIndexHtml(), {
           headers: {
             'Content-Type': 'text/html;charset=UTF-8',
-            ...getCorsHeaders(),
+            ...getCorsHeaders(origin),
           },
         });
       
       default:
-        return createErrorResponse('Not Found', 404);
+        return createErrorResponse('Not Found', 404, origin);
     }
   } catch (error) {
     console.error('Unhandled error:', error);
-    return createErrorResponse('Internal Server Error', 500);
+    return createErrorResponse('Internal Server Error', 500, origin);
   }
 };
 

@@ -134,11 +134,12 @@ ${practice ? `**오늘의 실천 과제:** ${practice.title} - ${practice.descri
 }
 
 /**
- * 사용자 감정별 맞춤 프롬프트
+ * 사용자 감정별 맞춤 프롬프트.
+ * emotion이 명시적으로 주어지면(예: UI 감정 칩 클릭) 그 감정 전용 가이드만 준다.
+ * 명시적으로 안 주어지면, 별도 LLM 호출로 감정을 미리 분류하는 대신 이 응답 생성 한 번 안에서
+ * 모델이 메시지를 보고 스스로 감정을 판단해 맞는 가이드를 적용하도록 전체 가이드를 준다.
  */
 function getUserEmotionPrompt(emotion) {
-  if (!emotion) return '';
-
   const emotionPrompts = {
     'frustrated': `
 **감정 상태: 좌절감**
@@ -183,7 +184,18 @@ function getUserEmotionPrompt(emotion) {
 `
   };
 
-  return emotionPrompts[emotion] || '';
+  if (emotion) {
+    return emotionPrompts[emotion] || '';
+  }
+
+  // 감정이 명시적으로 주어지지 않음: 모델이 메시지에서 스스로 감정을 추론하게 한다
+  return `
+**감정 상태: 명시되지 않음 — 메시지에서 스스로 판단**
+사용자 메시지 톤과 내용에서 감정 상태를 스스로 추론한 뒤, 아래 가이드 중 맞는 것을 적용해 응답하세요.
+확실한 감정이 안 보이면 중립적이고 따뜻한 톤으로 응답하세요.
+
+${Object.values(emotionPrompts).join('\n')}
+`;
 }
 
 /**
@@ -199,31 +211,6 @@ function getUserProfilePrompt(userProfile) {
 - 개인적인 상황과 맥락을 이해합니다
 `;
 }
-
-/**
- * 감정 분석 프롬프트 생성
- */
-export const createEmotionAnalysisPrompt = (message) => {
-  return `
-다음 사용자 메시지의 감정 상태를 분석해주세요.
-
-**메시지:** "${message}"
-
-**분석 기준:**
-- 주요 감정: frustrated, sad, angry, anxious, happy, tired, neutral
-- 감정 강도: 1-5 (1: 약함, 5: 매우 강함)
-- 신뢰도: 0-1 (0: 불확실, 1: 확실)
-
-**응답 형식:**
-JSON 형태로 응답해주세요.
-{
-  "primaryEmotion": "감정명",
-  "emotionIntensity": 숫자,
-  "confidence": 숫자,
-  "reasoning": "분석 근거"
-}
-`;
-};
 
 /**
  * 대화 요약 프롬프트 생성
