@@ -33,6 +33,8 @@ export class LLMService {
           return await this.generateOpenAIResponse(userMessage, conversationHistory, systemPrompt, options);
         case 'claude':
           return await this.generateClaudeResponse(userMessage, conversationHistory, systemPrompt, options);
+        case 'nvidia':
+          return await this.generateNvidiaResponse(userMessage, conversationHistory, systemPrompt, options);
         default:
           throw new Error(`Unsupported LLM provider: ${this.provider}`);
       }
@@ -105,6 +107,36 @@ export class LLMService {
 
     const data = await response.json();
     return this.extractClaudeResponseContent(data);
+  }
+
+  /**
+   * NVIDIA build API 응답 생성 (OpenAI 호환 chat/completions 포맷)
+   */
+  async generateNvidiaResponse(userMessage, conversationHistory, systemPrompt, options) {
+    const messages = this.buildMessages(userMessage, conversationHistory, systemPrompt);
+
+    const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.config.nvidiaApiKey}`,
+      },
+      body: JSON.stringify({
+        model: options.model || 'nvidia/nemotron-3-ultra-550b-a55b',
+        messages,
+        max_tokens: options.maxTokens || 1000,
+        temperature: options.temperature || 0.7,
+        top_p: options.topP || 1,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(`HTTP ${response.status}: ${errorData.error?.message || 'API request failed'}`);
+    }
+
+    const data = await response.json();
+    return this.extractResponseContent(data);
   }
 
   /**
