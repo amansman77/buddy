@@ -3,35 +3,29 @@ import { createErrorResponse, createSuccessResponse } from '../utils/response.js
 import { validateChatRequest } from '../utils/validation.js';
 import { createSystemPrompt, createEmotionAnalysisPrompt } from '../prompts/buddy.js';
 
-/**
- * 설정된 키를 기준으로 사용 가능한 LLM provider 목록을 우선순위대로 반환
- */
-function getAvailableProviders(env) {
-  const providers = [];
-  if (env.OPENAI_API_KEY && env.OPENAI_API_KEY !== 'MOCK_KEY_FOR_TESTING') providers.push('openai');
-  if (env.NVIDIA_API_KEY) providers.push('nvidia');
-  if (env.CLAUDE_API_KEY && env.CLAUDE_API_KEY !== 'MOCK_KEY_FOR_TESTING') providers.push('claude');
-  return providers;
-}
+const SUPPORTED_PROVIDERS = ['openai', 'nvidia', 'claude'];
 
 /**
- * 여러 provider를 순서대로 시도하고, 실패하면 다음 provider로 폴백
+ * env.LLM_PROVIDER로 명시적으로 지정된 provider를 사용한다. 자동 폴백은 하지 않는다 —
+ * provider가 죽어있으면 실패한 요청이 한 번 더 반복되는 대신 바로 에러를 반환한다.
+ * provider를 바꾸려면 wrangler.toml의 LLM_PROVIDER 값을 바꿔서 재배포한다.
  */
-async function generateWithFallback(providers, llmConfig, useMock, ...args) {
-  if (useMock) {
-    return new LLMService(providers[0] || 'openai', { ...llmConfig, useMock }).generateResponse(...args);
+function resolveProvider(env) {
+  const configured = env.LLM_PROVIDER;
+  if (!SUPPORTED_PROVIDERS.includes(configured)) {
+    throw new Error(`LLM_PROVIDER가 올바르지 않습니다: ${configured} (허용값: ${SUPPORTED_PROVIDERS.join(', ')})`);
   }
 
-  let lastError;
-  for (const provider of providers) {
-    try {
-      return await new LLMService(provider, llmConfig).generateResponse(...args);
-    } catch (error) {
-      console.warn(`${provider} 실패, 다음 provider로 폴백:`, error.message);
-      lastError = error;
-    }
+  const keyPresent = {
+    openai: env.OPENAI_API_KEY && env.OPENAI_API_KEY !== 'MOCK_KEY_FOR_TESTING',
+    nvidia: !!env.NVIDIA_API_KEY,
+    claude: env.CLAUDE_API_KEY && env.CLAUDE_API_KEY !== 'MOCK_KEY_FOR_TESTING',
+  };
+  if (!keyPresent[configured]) {
+    throw new Error(`LLM_PROVIDER=${configured}로 설정돼 있지만 해당 API 키가 없습니다`);
   }
-  throw lastError || new Error('No LLM provider available');
+
+  return configured;
 }
 
 /**
@@ -80,22 +74,18 @@ export const handleChatRequest = async (request, env) => {
     // Mock 모드 확인
     const isMockMode = env.OPENAI_API_KEY === 'MOCK_KEY_FOR_TESTING' && env.CLAUDE_API_KEY === 'MOCK_KEY_FOR_TESTING';
 
-    // 사용 가능한 provider 목록 (우선순위: openai -> nvidia -> claude)
-    const availableProviders = getAvailableProviders(env);
-
-    // API 키 확인 (Mock 모드가 아닌 경우)
-    if (!isMockMode && availableProviders.length === 0) {
-      console.error('No LLM API keys configured');
-      return createErrorResponse('LLM API keys not configured', 500);
-    }
+    // 사용할 provider는 LLM_PROVIDER로 명시적으로 고정한다 (자동 폴백 없음)
+    const llmProvider = isMockMode ? 'openai' : resolveProvider(env);
 
     const llmConfig = {
       openaiApiKey: env.OPENAI_API_KEY,
       claudeApiKey: env.CLAUDE_API_KEY,
       nvidiaApiKey: env.NVIDIA_API_KEY,
+      useMock: isMockMode,
     };
 
-    console.log('LLM providers ready (priority order):', { providers: isMockMode ? ['mock'] : availableProviders, isMockMode });
+    console.log('Initializing LLM service...', { provider: llmProvider, isMockMode });
+    const llmService = new LLMService(llmProvider, llmConfig);
 
     // 세션 기반 대화 기록 로드
     let conversationHistory = [];
@@ -115,13 +105,10 @@ export const handleChatRequest = async (request, env) => {
 
     // 감정 분석 (선택사항, Mock 모드가 아닌 경우)
     let analyzedEmotion = emotion;
-    if (!emotion && !isMockMode && availableProviders.length > 0) {
+    if (!emotion && !isMockMode) {
       try {
         const emotionPrompt = createEmotionAnalysisPrompt(message);
-        const emotionResponse = await generateWithFallback(
-          availableProviders,
-          llmConfig,
-          isMockMode,
+        const emotionResponse = await llmService.generateResponse(
           message,
           [],
           emotionPrompt,
@@ -161,13 +148,10 @@ export const handleChatRequest = async (request, env) => {
     // 시스템 프롬프트 생성
     const systemPrompt = createSystemPrompt(context);
 
-    console.log('Calling LLM API...', { providers: isMockMode ? ['mock'] : availableProviders, service, emotion: analyzedEmotion, isMockMode });
+    console.log('Calling LLM API...', { provider: llmProvider, service, emotion: analyzedEmotion, isMockMode });
 
-    // LLM API 호출 (provider 순서대로 시도, 실패 시 다음 provider로 폴백)
-    const aiResponse = await generateWithFallback(
-      availableProviders,
-      llmConfig,
-      isMockMode,
+    // LLM API 호출
+    const aiResponse = await llmService.generateResponse(
       message,
       conversationHistory,
       systemPrompt,

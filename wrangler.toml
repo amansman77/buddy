@@ -2,8 +2,12 @@ name = "buddy"
 main = "src/index.js"
 compatibility_date = "2024-09-09"
 
+# 사용할 LLM provider를 명시적으로 고정한다 (openai | nvidia | claude).
+# 자동 폴백은 하지 않으므로, provider를 바꾸려면 이 값을 바꾸고 재배포한다.
+[vars]
+LLM_PROVIDER = "nvidia"
+
 # 로컬 개발용 환경변수 (로컬 개발 시에만 사용)
-# [vars]
 # 로컬 개발 시 Mock 키 사용
 # OPENAI_API_KEY = "MOCK_KEY_FOR_TESTING"
 # CLAUDE_API_KEY = "MOCK_KEY_FOR_TESTING"
