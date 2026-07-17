@@ -47,6 +47,18 @@ export const createSystemPrompt = (context = {}, options = {}) => {
   // 사용자 프로필 기반 개인화
   const profilePrompt = getUserProfilePrompt(userProfile);
 
+  const formatInstruction = `
+지금부터의 답변은 마크다운을 렌더링하지 않는 채팅 말풍선 안에 그대로 출력됩니다. 절대로 #, ##, **, -, *, |, 백틱, 번호 매기기 같은 마크다운 문법을 쓰지 마세요. 표나 헤더나 굵은 글씨나 목록도 쓰지 마세요. 오직 자연스럽게 이어지는 대화체 문장으로만, 3에서 5문장 정도로 짧게 답하세요.
+
+나쁜 예시 (절대 이렇게 쓰지 마세요):
+### 대화 주제
+- 감정 나누기
+- 실천 과제
+
+좋은 예시 (이렇게 쓰세요):
+우리는 오늘 하루 어땠는지 편하게 나눌 수도 있고, 마음이 흔들릴 때 중심을 잡는 연습을 같이 해볼 수도 있어. 지금 어떤 게 제일 하고 싶어?
+`;
+
   return `${basePrompt}
 
 ${servicePrompt}
@@ -57,6 +69,8 @@ ${profilePrompt}
 
 **현재 컨텍스트:**
 ${JSON.stringify(context, null, 2)}
+
+${formatInstruction}
 `.trim();
 };
 
